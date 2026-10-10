@@ -8,12 +8,12 @@ end-to-end without paid API keys (an anvil sandbox chain stands in for Sepolia).
 
 ## Components
 
-| Path | What | Tech |
-| --- | --- | --- |
-| `packages/contracts` | `GuardedVault` + Foundry tests + Sepolia deploy script | Solidity 0.8.24, Foundry, OpenZeppelin 5 |
-| `packages/shared` | API DTO types and the generated vault ABI/bytecode | TypeScript |
-| `apps/api` | HTTP API, Redis Stream consumer, mempool watcher, guardian, attack simulator | Node 22, Fastify, viem, ioredis, pg, zod |
-| `apps/web` | Dashboard (static export) | Next.js 15, React 19, Tailwind 4 |
+| Path                 | What                                                                         | Tech                                     |
+| -------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
+| `packages/contracts` | `GuardedVault` + Foundry tests + Sepolia deploy script                       | Solidity 0.8.28, Foundry, OpenZeppelin 5 |
+| `packages/shared`    | API DTO types and the generated vault ABI/bytecode                           | TypeScript                               |
+| `apps/api`           | HTTP API, Redis Stream consumer, mempool watcher, guardian, attack simulator | Node 22, Fastify, viem, ioredis, pg, zod |
+| `apps/web`           | Dashboard (static export)                                                    | Next.js 15, React 19, Tailwind 4         |
 
 ## Contract: `GuardedVault`
 
@@ -25,7 +25,7 @@ end-to-end without paid API keys (an anvil sandbox chain stands in for Sepolia).
 - **Timelock**: `ADMIN_ROLE` schedules admin calls (`grantRole`, `revokeRole`,
   `setRateLimit`, `setTimelockDelay`, `unpause`) which execute only after
   `timelockDelay`. The vault is its own `DEFAULT_ADMIN_ROLE`, so role changes
-  *must* go through the timelock. Guardians can cancel queued operations.
+  _must_ go through the timelock. Guardians can cancel queued operations.
 - Tests: unit, fuzz, invariant (bucket never exceeds limit, outflow bounded),
   a drain attack stopped by rate limit + pause, and a re-entrancy attack.
 

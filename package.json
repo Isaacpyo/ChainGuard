@@ -5,8 +5,7 @@
   "license": "MIT",
   "workspaces": [
     "packages/shared",
-    "apps/api",
-    "apps/web"
+    "apps/api"
   ],
   "engines": {
     "node": ">=20.11"
@@ -31,6 +30,10 @@
     "globals": "^16.0.0",
     "prettier": "^3.6.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0"
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "vite": "^7.3.7"
   }
 }
