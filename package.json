@@ -2,7 +2,6 @@
   "name": "chainguard",
   "private": true,
   "description": "Real-time smart contract security monitoring: mempool watcher, rules engine, auto-pause guardian and dashboard.",
-  "license": "MIT",
   "workspaces": [
     "packages/shared",
     "apps/api",

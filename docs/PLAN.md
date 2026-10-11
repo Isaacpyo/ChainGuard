@@ -13,7 +13,7 @@ end-to-end without paid API keys (an anvil sandbox chain stands in for Sepolia).
 | `packages/contracts` | `GuardedVault` + Foundry tests + Sepolia deploy script                       | Solidity 0.8.28, Foundry, OpenZeppelin 5 |
 | `packages/shared`    | API DTO types and the generated vault ABI/bytecode                           | TypeScript                               |
 | `apps/api`           | HTTP API, Redis Stream consumer, mempool watcher, guardian, attack simulator | Node 22, Fastify, viem, ioredis, pg, zod |
-| `apps/web`           | Dashboard (static export)                                                    | Next.js 15, React 19, Tailwind 4         |
+| `apps/web`           | Dashboard (static export)                                                    | Next.js 16, React 19, Tailwind 4         |
 
 ## Contract: `GuardedVault`
 
