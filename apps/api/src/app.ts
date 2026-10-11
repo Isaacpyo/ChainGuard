@@ -43,7 +43,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     trustProxy: true, // Render terminates TLS in front of us
     bodyLimit: 64 * 1024,
     forceCloseConnections: true, // SSE connections must not block shutdown
-    disableRequestLogging: config.NODE_ENV === 'test',
   });
 
   const allowed = new Set(config.CORS_ORIGINS);
