@@ -35,7 +35,7 @@ const RESPONSE_LABEL: Record<
   none: null,
   pause_submitted: { text: 'Pause sent', tone: 'warn' },
   pause_confirmed: { text: 'Guardian paused vault', tone: 'good' },
-  already_paused: { text: 'Vault already paused', tone: 'neutral' },
+  already_paused: { text: 'Covered by guardian pause', tone: 'neutral' },
   pause_failed: { text: 'Pause failed', tone: 'bad' },
 };
 
