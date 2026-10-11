@@ -5,7 +5,8 @@
   "license": "MIT",
   "workspaces": [
     "packages/shared",
-    "apps/api"
+    "apps/api",
+    "apps/web"
   ],
   "engines": {
     "node": ">=20.11"

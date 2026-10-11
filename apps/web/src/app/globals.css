@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --color-canvas: #080b10;
+  --color-panel: #0e131b;
+  --color-panel-raised: #141b26;
+  --color-line: #1f2936;
+  --color-line-strong: #2c3a4c;
+  --color-muted: #8b9bb0;
+  --color-ink: #e6edf5;
+  --color-brand: #34d399;
+
+  --animate-flash: flash 1.6s ease-out;
+  @keyframes flash {
+    from {
+      background-color: rgb(52 211 153 / 0.14);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+}
+
+html {
+  color-scheme: dark;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 500px at 15% -10%, rgb(52 211 153 / 0.07), transparent 60%),
+    radial-gradient(900px 400px at 100% 0%, rgb(56 189 248 / 0.05), transparent 60%),
+    var(--color-canvas);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* One focus style everywhere: visible on keyboard, invisible on click. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
