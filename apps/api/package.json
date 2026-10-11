@@ -27,9 +27,11 @@
   "devDependencies": {
     "@types/node": "^22.18.0",
     "@types/pg": "^8.15.0",
+    "@types/ws": "^8.18.0",
     "esbuild": "^0.25.10",
     "tsx": "^4.20.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "ws": "^8.18.0"
   }
 }
