@@ -110,12 +110,12 @@ the race, the rate limit still caps the loss (the UI shows the cap).
 
 `packages/contracts/src/GuardedVault.sol`
 
-| Layer      | Mechanism                                                                                                                                                  | Who                                            |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Rate limit | Token bucket: `withdrawLimit` wei capacity, refilling linearly over `windowDuration`. A leaked withdrawer key can drain at most that rate.                 | enforced on every `withdraw`                   |
-| Pause      | `pause()` is instant and idempotent. `unpause()` is timelocked, so a stolen admin key cannot undo an emergency pause.                                      | `GUARDIAN_ROLE`                                |
-| Timelock   | `schedule(data, salt)` → wait `timelockDelay` → `execute`. Only `grantRole`, `revokeRole`, `setRateLimit`, `setTimelockDelay` and `unpause` can be queued. | `ADMIN_ROLE` schedules; guardians can `cancel` |
-| Roles      | The vault holds `DEFAULT_ADMIN_ROLE` itself and can never hand it out, so role changes _must_ go through the timelock.                                     | —                                              |
+| Layer      | Mechanism                                                                                                                                                                                              | Who                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Rate limit | Token bucket: `withdrawLimit` wei capacity, refilling linearly over `windowDuration`. A leaked withdrawer key can drain at most that rate.                                                             | enforced on every `withdraw`                              |
+| Pause      | `pause()` is instant and idempotent. `unpause()` is timelocked, can only be queued while paused, and only lifts the pause it was queued against, so a stolen admin key cannot undo an emergency pause. | `GUARDIAN_ROLE`                                           |
+| Timelock   | `schedule(data, salt)` → wait `timelockDelay` → `execute`. Only `grantRole`, `revokeRole`, `setRateLimit`, `setTimelockDelay` and `unpause` can be queued.                                             | `ADMIN_ROLE` schedules; guardians and admins can `cancel` |
+| Roles      | The vault holds `DEFAULT_ADMIN_ROLE` itself and can never hand it out, so role changes _must_ go through the timelock.                                                                                 | —                                                         |
 
 ## Detection rules
 
