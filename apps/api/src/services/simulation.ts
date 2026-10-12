@@ -69,14 +69,22 @@ export class SimulationRunner implements ActiveSimulation {
       throw err;
     }
     this.#activeId = sim.id;
-    this.#done = this.#run(sim.id).finally(() => {
-      this.#busy = false;
-      this.#activeId = null;
-    });
+    const id = sim.id;
+    // Nothing awaits a background run: an error escaping it (the database is down, so even
+    // recording the failure fails) must be logged, not left as an unhandled rejection.
+    this.#done = this.#run(id)
+      .catch((err: unknown) => {
+        this.deps.log.error({ err, id }, 'could not record the simulation outcome');
+        return null;
+      })
+      .finally(() => {
+        this.#busy = false;
+        this.#activeId = null;
+      });
     return sim;
   }
 
-  #done: Promise<SimulationDto> | null = null;
+  #done: Promise<SimulationDto | null> | null = null;
 
   /** Resolves with the finished simulation of the current/last run. For tests. */
   async waitForCompletion(): Promise<SimulationDto | null> {
