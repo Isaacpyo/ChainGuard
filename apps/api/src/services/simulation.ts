@@ -8,7 +8,7 @@ import { guardedVaultAbi } from '@chainguard/shared/abi';
 import { parseEther, parseGwei, type Hex } from 'viem';
 import { SANDBOX_PARAMS, type Sandbox } from '../chain/sandbox';
 import type { Repos } from '../db/repos';
-import type { Logger } from '../logger';
+import { redactUrls, type Logger } from '../logger';
 import type { ResponseEvent } from '../streams/events';
 import type { Broadcaster } from './broadcaster';
 import type { ActiveSimulation } from './ingest';
@@ -247,7 +247,8 @@ export class SimulationRunner implements ActiveSimulation {
       return finished;
     } catch (err) {
       log.error({ err, id }, 'simulation failed');
-      const message = err instanceof Error ? err.message.split('\n')[0]! : String(err);
+      // Stored and shown on the dashboard: no RPC URLs (a fork URL carries an API key).
+      const message = redactUrls(err instanceof Error ? err.message.split('\n')[0]! : String(err));
       const failed = await repos.simulations.finish(id, { status: 'failed', error: message });
       broadcaster.publish({ type: 'simulation.finished', simulation: failed });
       return failed;

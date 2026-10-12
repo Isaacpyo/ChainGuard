@@ -2,7 +2,7 @@ import type { Network } from '@chainguard/shared';
 import { randomUUID } from 'node:crypto';
 import { isAddressEqual, type Address, type Hex } from 'viem';
 import type { VaultStateReader, VaultChainState } from '../chain/vault';
-import type { Logger } from '../logger';
+import { redactUrls, type Logger } from '../logger';
 import type { AlertPayload, ChainGuardEvent, ResponseEvent } from '../streams/events';
 import { decodeVaultCall } from './decoder';
 import type { Guardian } from './guardian';
@@ -247,4 +247,5 @@ export class Watcher {
   }
 }
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** Error text for logs and the stream: viem messages include the RPC URL, API key and all. */
+const errorText = (err: unknown) => redactUrls(err instanceof Error ? err.message : String(err));

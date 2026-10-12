@@ -1,4 +1,4 @@
-import type { Hex } from 'viem';
+import { HttpRequestError, type Hex } from 'viem';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MockVaultReader, type VaultChainState, type VaultStateReader } from '../src/chain/vault';
 import { silentLogger } from '../src/logger';
@@ -205,6 +205,31 @@ describe('Watcher', () => {
     expect((f.guardian as MockGuardian).calls).toHaveLength(2);
     expect(f.publisher.responses().map((r) => r.action)).toContain('pause_confirmed');
     expect(f.publisher.responses().map((r) => r.action)).not.toContain('already_paused');
+  });
+
+  it('keeps the RPC key out of a failed pause published to the stream', async () => {
+    const key = 'aBcD1234SeCrEtKeY';
+    const f = setup({
+      guardian: {
+        address: ADMIN,
+        async pause(): Promise<Hex> {
+          throw new HttpRequestError({
+            url: `https://eth-sepolia.g.alchemy.com/v2/${key}`,
+            status: 503,
+          });
+        },
+        async waitForReceipt() {
+          return 'success';
+        },
+      },
+    });
+    await f.watcher.start();
+    f.source.push(withdrawTx(ATTACKER, '10'));
+    await f.watcher.idle();
+    const [failed] = f.publisher.responses();
+    expect(failed).toMatchObject({ action: 'pause_failed' });
+    expect(failed!.error).toContain('URL: https://eth-sepolia.g.alchemy.com/[redacted]');
+    expect(failed!.error).not.toContain(key);
   });
 
   it('keeps alerting without vault state', async () => {
