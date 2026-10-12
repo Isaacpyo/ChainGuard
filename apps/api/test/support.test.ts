@@ -4,6 +4,9 @@ import { hashPassword, verifyPassword } from '../src/auth/password';
 import { TokenService } from '../src/auth/tokens';
 import { CachedVaultReader, toVaultStateDto, type VaultStateReader } from '../src/chain/vault';
 import { loadConfig } from '../src/config';
+import { createPool } from '../src/db/pool';
+import { decodeCursor, encodeCursor } from '../src/db/repos';
+import type { Logger } from '../src/logger';
 import { decodeEvent, encodeEvent, type ChainGuardEvent } from '../src/streams/events';
 import { MAX_TIP, MIN_TIP, outbidFees } from '../src/watcher/fees';
 import { BoundedSet, SenderHistory } from '../src/watcher/history';
@@ -159,6 +162,43 @@ describe('CachedVaultReader', () => {
       balanceWei: '100000000000000000000',
       windowSeconds: 3600,
     });
+  });
+});
+
+describe('alert cursors', () => {
+  const at = '2026-10-12T14:19:28.123Z';
+  const id = '7b7c5f6a-63b3-4f4b-9d43-2f9a2b1c0d11';
+  const raw = (s: string) => Buffer.from(s).toString('base64url');
+
+  it('round-trips', () => {
+    expect(decodeCursor(encodeCursor(at, id))).toEqual({ detectedAt: at, id });
+  });
+
+  it('rejects anything Postgres would fail to cast', () => {
+    for (const bad of [
+      `${at}|${'-'.repeat(36)}`, // matched the old [0-9a-f-]{36} check
+      `${at}|zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz`,
+      `2020|${id}`, // Date.parse accepts it, ::timestamptz does not
+      `2026-02-30T00:00:00Z|${id}`,
+      `0000-01-01T00:00:00Z|${id}`,
+      `${at}|${id}|extra`,
+      at,
+    ]) {
+      expect(decodeCursor(raw(bad)), bad).toBeNull();
+    }
+    expect(decodeCursor('not base64 at all!')).toBeNull();
+  });
+});
+
+describe('createPool', () => {
+  it('logs errors from idle connections instead of crashing the process', async () => {
+    const log = { warn: vi.fn() } as unknown as Logger;
+    const pool = createPool('postgres://u:p@127.0.0.1:1/db', log);
+    const dropped = new Error('terminating connection due to administrator command');
+    // pg re-emits an idle client's error on the pool; with no listener, emit() throws.
+    expect(() => pool.emit('error', dropped)).not.toThrow();
+    expect(log.warn).toHaveBeenCalledWith({ err: dropped }, expect.any(String));
+    await pool.end();
   });
 });
 
