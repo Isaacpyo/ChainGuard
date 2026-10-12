@@ -11,7 +11,7 @@ import clsx from 'clsx';
 import { Inbox, Radio, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { timeAgo, useNow, useStreamEvent } from '@/lib/bus';
+import { timeAgo, useNow, useResync, useStreamEvent } from '@/lib/bus';
 import { mergeLatestPage } from '@/lib/feed';
 import { Badge, Button, Card, EmptyState, ErrorState, Mono, SeverityBadge, Skeleton } from './ui';
 
@@ -51,10 +51,12 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
   const requestId = useRef(0);
   const now = useNow(10_000);
 
+  /** `more` appends the next page; `refresh` re-reads the first page without the skeleton. */
   const load = useCallback(
-    async (more = false) => {
+    async (mode: 'first' | 'more' | 'refresh' = 'first') => {
+      const more = mode === 'more';
       const id = ++requestId.current;
-      setStatus(more ? 'more' : 'loading');
+      if (mode !== 'refresh') setStatus(more ? 'more' : 'loading');
       try {
         const query = FILTERS.find((f) => f.id === filter)!.query;
         const page = await api.alerts({
@@ -84,10 +86,13 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
     // Start from an empty list so nothing from the previous vault/filter is merged in.
     setItems([]);
     setCursor(null);
-    void load(false);
+    void load();
     // Reload only when the vault or filter changes, not when the cursor moves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vaultId, filter]);
+
+  // Alerts and status changes sent while the stream was down are not replayed.
+  useResync(() => void load('refresh'));
 
   useStreamEvent((e) => {
     if (e.type === 'alert' && e.alert.vaultId === vaultId && matches(e.alert, filter)) {
@@ -149,7 +154,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
           ))}
         </div>
       )}
-      {status === 'error' && <ErrorState message={error} onRetry={() => void load(false)} />}
+      {status === 'error' && <ErrorState message={error} onRetry={() => void load()} />}
       {(status === 'ready' || status === 'more') && items.length === 0 && (
         <EmptyState icon={<Inbox className="size-7" />} title="No alerts yet">
           {filter === 'all'
@@ -172,7 +177,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
       )}
       {cursor && status !== 'loading' && (
         <div className="mt-4 flex justify-center">
-          <Button size="sm" busy={status === 'more'} onClick={() => void load(true)}>
+          <Button size="sm" busy={status === 'more'} onClick={() => void load('more')}>
             Load older alerts
           </Button>
         </div>
