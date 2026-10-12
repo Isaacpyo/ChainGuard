@@ -53,6 +53,7 @@ export default function DashboardPage() {
       onEvent: (e) => bus.emit(e),
       onState: setStream,
       onUnauthorized: clearSession,
+      onReconnect: () => bus.resync(),
     });
   }, [token, bus, load]);
 

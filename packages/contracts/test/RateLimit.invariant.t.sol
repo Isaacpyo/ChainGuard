@@ -11,6 +11,9 @@ contract RateLimitHandler is Test {
 
     uint256 public immutable STARTED_AT;
     uint256 public totalWithdrawn;
+    /// @dev Ghost flag: a handler revert is discarded under `fail_on_revert = false`, so a
+    ///      successful overdraw has to be recorded rather than caught with `expectRevert`.
+    bool public overdrawSucceeded;
 
     constructor(GuardedVault vault_, address withdrawer_) {
         VAULT = vault_;
@@ -31,8 +34,9 @@ contract RateLimitHandler is Test {
         uint256 available = VAULT.availableToWithdraw();
         extra = bound(extra, 1, 1_000 ether);
         vm.prank(WITHDRAWER);
-        vm.expectRevert();
-        VAULT.withdraw(payable(address(0xBEEF)), available + extra);
+        try VAULT.withdraw(payable(address(0xBEEF)), available + extra) {
+            overdrawSucceeded = true;
+        } catch {}
     }
 
     function wait(uint256 seconds_) external {
@@ -56,6 +60,10 @@ contract RateLimitInvariantTest is Test {
 
         handler = new RateLimitHandler(vault, withdrawer);
         targetContract(address(handler));
+    }
+
+    function invariant_neverOverdraws() public view {
+        assertFalse(handler.overdrawSucceeded());
     }
 
     function invariant_bucketNeverExceedsLimit() public view {

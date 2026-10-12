@@ -4,7 +4,7 @@ import type { AlertSummary, ConfigDto } from '@chainguard/shared';
 import { Gauge } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
-import { useStreamEvent } from '@/lib/bus';
+import { useResync, useStreamEvent } from '@/lib/bus';
 import { Card, Skeleton } from './ui';
 
 export function SummaryTiles({ vaultId }: { vaultId: string }) {
@@ -33,6 +33,7 @@ export function SummaryTiles({ vaultId }: { vaultId: string }) {
       timer.current = setTimeout(load, 400);
     }
   });
+  useResync(load);
 
   const tiles = [
     { label: 'Open threats', value: summary?.open, tone: 'text-amber-100' },

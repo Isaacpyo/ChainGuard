@@ -11,7 +11,15 @@ test('demo login → live feed → simulated drain is stopped → triage', async
 
   // Seeded history is there before anything runs.
   const feed = page.getByTestId('alert-feed');
-  await expect(feed.locator('li[data-severity]').first()).toBeVisible();
+  const rows = feed.locator('li[data-severity]');
+  await expect(rows.first()).toBeVisible();
+
+  // The seed already has critical alerts and a guardian pause, so count them now
+  // to prove the simulation's own alerts arrive over SSE later.
+  const criticalRows = feed.locator('li[data-severity="critical"]');
+  const pausedRows = rows.filter({ hasText: 'Guardian paused vault' });
+  const criticalBefore = await criticalRows.count();
+  const pausedBefore = await pausedRows.count();
 
   await page.getByRole('button', { name: 'Simulate attack' }).click();
   await expect(page.getByRole('button', { name: 'Simulation running…' })).toBeDisabled();
@@ -26,12 +34,12 @@ test('demo login → live feed → simulated drain is stopped → triage', async
     page.getByRole('status').filter({ hasText: 'Paused — withdrawals blocked' }),
   ).toBeVisible();
 
-  // Live alerts streamed in over SSE, including the guardian's response.
-  await expect(feed.getByText('Guardian paused vault').first()).toBeVisible();
-  await expect(feed.locator('li[data-severity="critical"]').first()).toBeVisible();
+  // New alerts streamed in over SSE, including the guardian's response.
+  await expect.poll(() => criticalRows.count()).toBeGreaterThan(criticalBefore);
+  await expect.poll(() => pausedRows.count()).toBeGreaterThan(pausedBefore);
 
   // Triage: acknowledge the newest critical alert.
-  const critical = feed.locator('li[data-severity="critical"]').first();
+  const critical = criticalRows.first();
   await critical.getByRole('button', { name: 'Acknowledge' }).click();
   await expect(critical.getByText('acknowledged')).toBeVisible();
 });

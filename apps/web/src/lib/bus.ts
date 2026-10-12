@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 /** Fan-out of the single SSE connection to every panel that cares. */
 export class EventBus {
   readonly #listeners = new Set<(event: StreamEvent) => void>();
+  readonly #resyncListeners = new Set<() => void>();
 
   emit(event: StreamEvent): void {
     for (const l of this.#listeners) l(event);
@@ -15,6 +16,21 @@ export class EventBus {
     this.#listeners.add(listener);
     return () => {
       this.#listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Local signal, not a server event: the stream reconnected after a gap whose
+   * events are lost, so panels should re-fetch what they show.
+   */
+  resync(): void {
+    for (const l of this.#resyncListeners) l();
+  }
+
+  onResync(listener: () => void): () => void {
+    this.#resyncListeners.add(listener);
+    return () => {
+      this.#resyncListeners.delete(listener);
     };
   }
 }
@@ -28,6 +44,16 @@ export function useStreamEvent(handler: (event: StreamEvent) => void): void {
     ref.current = handler;
   });
   useEffect(() => bus?.on((e) => ref.current(e)), [bus]);
+}
+
+/** Runs `handler` after the stream reconnects, so the panel can re-fetch missed state. */
+export function useResync(handler: () => void): void {
+  const bus = useContext(BusContext);
+  const ref = useRef(handler);
+  useEffect(() => {
+    ref.current = handler;
+  });
+  useEffect(() => bus?.onResync(() => ref.current()), [bus]);
 }
 
 /** Re-renders every `intervalMs` so relative timestamps stay fresh. */
