@@ -4,6 +4,8 @@ import { hashPassword, verifyPassword } from '../src/auth/password';
 import { TokenService } from '../src/auth/tokens';
 import { CachedVaultReader, toVaultStateDto, type VaultStateReader } from '../src/chain/vault';
 import { loadConfig } from '../src/config';
+import { createPool } from '../src/db/pool';
+import type { Logger } from '../src/logger';
 import { decodeEvent, encodeEvent, type ChainGuardEvent } from '../src/streams/events';
 import { MAX_TIP, MIN_TIP, outbidFees } from '../src/watcher/fees';
 import { BoundedSet, SenderHistory } from '../src/watcher/history';
@@ -159,6 +161,18 @@ describe('CachedVaultReader', () => {
       balanceWei: '100000000000000000000',
       windowSeconds: 3600,
     });
+  });
+});
+
+describe('createPool', () => {
+  it('logs errors from idle connections instead of crashing the process', async () => {
+    const log = { warn: vi.fn() } as unknown as Logger;
+    const pool = createPool('postgres://u:p@127.0.0.1:1/db', log);
+    const dropped = new Error('terminating connection due to administrator command');
+    // pg re-emits an idle client's error on the pool; with no listener, emit() throws.
+    expect(() => pool.emit('error', dropped)).not.toThrow();
+    expect(log.warn).toHaveBeenCalledWith({ err: dropped }, expect.any(String));
+    await pool.end();
   });
 });
 

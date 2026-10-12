@@ -1,16 +1,21 @@
 import pg from 'pg';
+import type { Logger } from '../logger';
 import { migrations } from './migrations';
 
 export type Db = pg.Pool;
 
-export function createPool(databaseUrl: string): Db {
-  return new pg.Pool({
+export function createPool(databaseUrl: string, log: Logger): Db {
+  const pool = new pg.Pool({
     connectionString: databaseUrl,
     // Neon and Render close idle connections; keep the pool small and short-lived.
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
   });
+  // The pool re-emits errors of idle clients (e.g. Neon dropping the connection). Without a
+  // listener that would crash the process; the pool discards the client and reconnects.
+  pool.on('error', (err) => log.warn({ err }, 'idle database connection failed'));
+  return pool;
 }
 
 /** Applies pending migrations inside a transaction guarded by an advisory lock. */

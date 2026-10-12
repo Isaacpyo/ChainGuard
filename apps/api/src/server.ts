@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   const log = createLogger(config.LOG_LEVEL, config.NODE_ENV === 'development');
   const shutdown: (() => Promise<unknown>)[] = [];
 
-  const db = createPool(config.DATABASE_URL);
+  const db = createPool(config.DATABASE_URL, log.child({ component: 'db' }));
   shutdown.push(() => db.end());
   const ran = await migrate(db);
   if (ran.length) log.info({ migrations: ran }, 'applied migrations');
