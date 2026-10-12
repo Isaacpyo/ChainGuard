@@ -92,6 +92,8 @@ volumes:
   redisdata:
 
 # Only needed behind a TLS-intercepting proxy: EXTRA_CA_CERT=/path/to/ca.pem docker compose build
+# The default is an empty file inside the repo: buildx bake refuses to read paths
+# outside the project (such as /dev/null) without an explicit --allow=fs.read.
 secrets:
   extra_ca:
-    file: ${EXTRA_CA_CERT:-/dev/null}
+    file: ${EXTRA_CA_CERT:-./docker/no-extra-ca.pem}
