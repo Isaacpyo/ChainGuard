@@ -168,6 +168,7 @@ git submodule update --init           # forge-std + OpenZeppelin, only needed fo
 npm install
 docker compose up -d postgres redis   # or point .env at your own
 cp .env.example .env                  # defaults work as-is; the API spawns anvil itself
+                                      # personal overrides go in .env.local (wins over .env)
 npm run dev:api                       # http://localhost:4000
 npm run dev:web                       # http://localhost:3000
 ```
