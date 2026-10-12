@@ -31,6 +31,20 @@ class MemoryPublisher implements EventPublisher {
   }
 }
 
+/** Fails the first publish that matches, like a dropped Redis connection. */
+class FlakyPublisher extends MemoryPublisher {
+  constructor(private failOn: ((event: ChainGuardEvent) => boolean) | null) {
+    super();
+  }
+  override async publish(event: ChainGuardEvent): Promise<string> {
+    if (this.failOn?.(event)) {
+      this.failOn = null;
+      throw new Error('Connection is closed.');
+    }
+    return super.publish(event);
+  }
+}
+
 class StubState implements VaultStateReader {
   constructor(public state: VaultChainState | null = vaultState()) {}
   async read() {
@@ -38,9 +52,11 @@ class StubState implements VaultStateReader {
   }
 }
 
-function setup(opts: { guardian?: Guardian; state?: VaultStateReader } = {}) {
+function setup(
+  opts: { guardian?: Guardian; state?: VaultStateReader; publisher?: MemoryPublisher } = {},
+) {
   const source = new MockPendingSource();
-  const publisher = new MemoryPublisher();
+  const publisher = opts.publisher ?? new MemoryPublisher();
   const guardian = opts.guardian ?? new MockGuardian();
   let now = 1_000_000;
   const watcher = new Watcher({
@@ -168,6 +184,27 @@ describe('Watcher', () => {
       ['pause_submitted', null],
       ['pause_confirmed', null],
     ]);
+  });
+
+  it.each([
+    ['the alert', (e: ChainGuardEvent) => e.type === 'alert'],
+    [
+      'pause_submitted',
+      (e: ChainGuardEvent) => e.type === 'alert.response' && e.action === 'pause_submitted',
+    ],
+  ])('still pauses a later attack after publishing %s failed', async (_, failOn) => {
+    const f = setup({ publisher: new FlakyPublisher(failOn) });
+    await f.watcher.start();
+    f.source.push(withdrawTx(ATTACKER, '10'));
+    await f.watcher.idle();
+    expect((f.guardian as MockGuardian).calls).toHaveLength(1);
+
+    // The vault is not paused (e.g. unpaused through the timelock since): pause again.
+    f.source.push(withdrawTx(ATTACKER, '10'));
+    await f.watcher.idle();
+    expect((f.guardian as MockGuardian).calls).toHaveLength(2);
+    expect(f.publisher.responses().map((r) => r.action)).toContain('pause_confirmed');
+    expect(f.publisher.responses().map((r) => r.action)).not.toContain('already_paused');
   });
 
   it('keeps alerting without vault state', async () => {
