@@ -1,6 +1,6 @@
 # ChainGuard
 
-[![CI](https://github.com/isaacpyo/ChainGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/isaacpyo/ChainGuard/actions/workflows/ci.yml)
+[![CI](https://github.com/temitopeagbola/ChainGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/temitopeagbola/ChainGuard/actions/workflows/ci.yml)
 
 **Live demo: https://chainguard.temitopeagbola.com** — click **Try the demo**, then **Simulate attack**.
 (The API runs on Render's free tier; if it has been idle, the first request takes up to a minute while it wakes.)
@@ -151,7 +151,7 @@ docker-compose.yml  render.yaml  netlify.toml  .env.example
 ### Everything in Docker (one command)
 
 ```bash
-git clone https://github.com/isaacpyo/ChainGuard.git && cd ChainGuard
+git clone https://github.com/temitopeagbola/ChainGuard.git && cd ChainGuard
 docker compose up --build
 ```
 

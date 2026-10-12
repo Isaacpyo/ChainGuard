@@ -78,7 +78,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/', async () => ({
     name: 'chainguard-api',
-    docs: 'https://github.com/isaacpyo/ChainGuard',
+    docs: 'https://github.com/temitopeagbola/ChainGuard',
   }));
 
   app.get('/health', async (_req, reply) => {
