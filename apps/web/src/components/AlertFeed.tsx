@@ -12,6 +12,7 @@ import { Inbox, Radio, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { timeAgo, useNow, useStreamEvent } from '@/lib/bus';
+import { mergeLatestPage } from '@/lib/feed';
 import { Badge, Button, Card, EmptyState, ErrorState, Mono, SeverityBadge, Skeleton } from './ui';
 
 type Filter = 'all' | 'threats' | 'open';
@@ -66,7 +67,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
         setItems((prev) =>
           more
             ? [...prev, ...page.items.filter((a) => !prev.some((p) => p.id === a.id))]
-            : page.items,
+            : mergeLatestPage(prev, page.items),
         );
         setCursor(page.nextCursor);
         setStatus('ready');
@@ -80,6 +81,8 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
   );
 
   useEffect(() => {
+    // Start from an empty list so nothing from the previous vault/filter is merged in.
+    setItems([]);
     setCursor(null);
     void load(false);
     // Reload only when the vault or filter changes, not when the cursor moves.
