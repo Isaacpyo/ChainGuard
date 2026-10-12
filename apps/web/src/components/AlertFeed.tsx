@@ -49,6 +49,8 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [announcement, setAnnouncement] = useState('');
   const requestId = useRef(0);
+  // Alerts streamed in since the last first-page request started; they survive its merge.
+  const streamedIds = useRef(new Set<string>());
   const now = useNow(10_000);
 
   /** `more` appends the next page; `refresh` re-reads the first page without the skeleton. */
@@ -56,6 +58,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
     async (mode: 'first' | 'more' | 'refresh' = 'first') => {
       const more = mode === 'more';
       const id = ++requestId.current;
+      if (!more) streamedIds.current = new Set();
       if (mode !== 'refresh') setStatus(more ? 'more' : 'loading');
       try {
         const query = FILTERS.find((f) => f.id === filter)!.query;
@@ -69,7 +72,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
         setItems((prev) =>
           more
             ? [...prev, ...page.items.filter((a) => !prev.some((p) => p.id === a.id))]
-            : mergeLatestPage(prev, page.items),
+            : mergeLatestPage(prev, page.items, streamedIds.current),
         );
         setCursor(page.nextCursor);
         setStatus('ready');
@@ -96,6 +99,7 @@ export function AlertFeed({ vaultId }: { vaultId: string }) {
 
   useStreamEvent((e) => {
     if (e.type === 'alert' && e.alert.vaultId === vaultId && matches(e.alert, filter)) {
+      streamedIds.current.add(e.alert.id);
       setItems((prev) => (prev.some((a) => a.id === e.alert.id) ? prev : [e.alert, ...prev]));
       setFresh((prev) => new Set(prev).add(e.alert.id));
       if (e.alert.severity === 'critical' || e.alert.severity === 'high') {
