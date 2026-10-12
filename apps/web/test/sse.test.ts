@@ -101,4 +101,67 @@ describe('openEventStream', () => {
       vi.useRealTimers();
     }
   });
+
+  /** A stream that stays open until the test ends. */
+  const openStream = () =>
+    new Response(new ReadableStream<Uint8Array>(), {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+
+  it('asks for a resync when the stream comes back after a drop, not on the first connect', async () => {
+    vi.useFakeTimers();
+    try {
+      const log: string[] = [];
+      // The first connection drops straight away; the second one stays up.
+      const responses = [() => streamResponse([]), openStream];
+      const fetchImpl = vi.fn(async () => responses.shift()!());
+      const close = openEventStream({
+        url: 'http://api/stream',
+        token: 't',
+        onEvent: () => undefined,
+        onState: (s) => log.push(s),
+        onUnauthorized: () => undefined,
+        onReconnect: () => log.push('resync'),
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(log).toEqual(['connecting', 'live', 'reconnecting']);
+      await vi.advanceTimersByTimeAsync(2_500);
+      close();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(log).toEqual(['connecting', 'live', 'reconnecting', 'reconnecting', 'live', 'resync']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks for a resync when the first attempt failed, since state was loaded without the stream', async () => {
+    vi.useFakeTimers();
+    try {
+      const responses = [
+        () => Promise.reject(new TypeError('fetch failed')),
+        async () => openStream(),
+      ];
+      const fetchImpl = vi.fn(() => responses.shift()!());
+      const onReconnect = vi.fn();
+      const close = openEventStream({
+        url: 'http://api/stream',
+        token: 't',
+        onEvent: () => undefined,
+        onState: () => undefined,
+        onUnauthorized: () => undefined,
+        onReconnect,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(onReconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2_500);
+      close();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(onReconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

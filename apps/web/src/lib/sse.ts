@@ -40,6 +40,12 @@ export interface StreamOptions {
   onState: (state: ConnectionState) => void;
   /** Called on 401 so the app can sign the user out. */
   onUnauthorized: () => void;
+  /**
+   * Called when the stream is live again after a drop or a failed attempt (not on
+   * the first connect). The server does not replay events sent while the client
+   * was away, so anything shown from the stream should be re-fetched.
+   */
+  onReconnect?: () => void;
   fetchImpl?: typeof fetch;
 }
 
@@ -68,6 +74,7 @@ export function openEventStream(opts: StreamOptions): () => void {
         }
         if (!res.ok || !res.body) throw new Error(`stream failed: ${res.status}`);
         opts.onState('live');
+        if (attempt > 0) opts.onReconnect?.();
         attempt = 0;
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
         const parser = new SseParser();

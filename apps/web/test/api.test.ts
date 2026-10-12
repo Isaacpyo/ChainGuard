@@ -68,4 +68,51 @@ describe('request', () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it('does not retry a POST or PATCH that hit a network error', async () => {
+    for (const method of ['POST', 'PATCH'] as const) {
+      setServerStatus('unknown');
+      const fetchImpl = vi.fn(() => Promise.reject(new TypeError('fetch failed')));
+      const sleep = vi.fn(async () => undefined);
+      const err = await request('/x', { method, auth: false, fetchImpl, sleep }).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ApiError);
+      expect(err).toMatchObject({ status: 0, code: 'network' });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+      expect(getServerStatus()).toBe('down');
+    }
+  });
+
+  it('maps a non-JSON error page to an ApiError', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('<html><body>502 Bad Gateway</body></html>', {
+          status: 502,
+          statusText: 'Bad Gateway',
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    );
+    const err = await request('/x', { method: 'POST', auth: false, fetchImpl }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 502, code: 'error', message: 'Bad Gateway' });
+  });
+
+  it('falls back to the status code when an error has no reason phrase', async () => {
+    const fetchImpl = vi.fn(async () => new Response('oops', { status: 500 }));
+    const err = await request('/x', { method: 'POST', auth: false, fetchImpl }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toMatchObject({ status: 500, code: 'error', message: 'Request failed (500)' });
+  });
+
+  it('rejects a successful response that is not JSON with an ApiError', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<!doctype html><p>hi</p>', { status: 200 }));
+    const err = await request('/x', { auth: false, fetchImpl }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 200, code: 'invalid_response' });
+  });
 });

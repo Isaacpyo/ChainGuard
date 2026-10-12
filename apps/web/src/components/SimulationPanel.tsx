@@ -17,9 +17,9 @@ import {
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '@/lib/api';
-import { timeAgo, useNow, useStreamEvent } from '@/lib/bus';
+import { timeAgo, useNow, useResync, useStreamEvent } from '@/lib/bus';
 import { Button, Card, Mono } from './ui';
 
 const STEP_LABELS: Record<SimulationStep, string> = {
@@ -43,19 +43,35 @@ export function SimulationPanel() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const now = useNow();
+  // Bumped whenever newer simulation state arrives, so a slower sync() cannot overwrite it.
+  const version = useRef(0);
 
-  useEffect(() => {
+  /**
+   * Reads the latest run: on mount, and after a stream reconnect, since a
+   * `simulation.finished` sent during the gap would otherwise leave the panel stuck
+   * on "running".
+   */
+  const sync = useCallback(() => {
+    const v = ++version.current;
     api
       .simulations(1)
       .then(([latest]) => {
-        if (!latest) return;
-        if (latest.status === 'running') setProgress({ id: latest.id, steps: {} });
-        else setLast(latest);
+        if (!latest || v !== version.current) return;
+        if (latest.status === 'running') {
+          setProgress((p) => (p?.id === latest.id ? p : { id: latest.id, steps: {} }));
+        } else {
+          setProgress(null);
+          setLast(latest);
+        }
       })
       .catch(() => undefined);
   }, []);
 
+  useEffect(sync, [sync]);
+  useResync(sync);
+
   useStreamEvent((e) => {
+    if (e.type === 'simulation.step' || e.type === 'simulation.finished') version.current++;
     if (e.type === 'simulation.step') {
       setProgress((p) => ({
         id: e.simulationId,
@@ -73,6 +89,7 @@ export function SimulationPanel() {
     setError(null);
     try {
       const sim = await api.simulate();
+      version.current++;
       setProgress((p) => (p?.id === sim.id ? p : { id: sim.id, steps: {} }));
     } catch (err) {
       setError(
