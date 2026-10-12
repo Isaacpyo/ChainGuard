@@ -21,6 +21,7 @@ import { Broadcaster } from './services/broadcaster';
 import { createIngestHandler } from './services/ingest';
 import { SimulationRunner } from './services/simulation';
 import { StreamConsumer, StreamPublisher } from './streams/redis-stream';
+import { announceSandboxReset, onSandboxReset, sandboxResetChannel } from './streams/sandbox-reset';
 import { MockGuardian, ViemGuardian, type Guardian } from './watcher/guardian';
 import {
   AlchemyPendingSource,
@@ -222,10 +223,22 @@ async function main(): Promise<void> {
     }
   }
 
+  // The simulator (API side) resets the sandbox chain; the sandbox watcher must then drop
+  // its stale state. With ROLE=api / ROLE=watcher the notice travels over Redis.
+  const sandboxWatcher = watchers.find((w) => w.target.network === 'sandbox');
+  const resetChannel = sandboxResetChannel(config.STREAM_KEY);
+  const resetSandboxState = () => {
+    sandboxWatcher?.reset();
+    sandboxReader?.invalidate();
+  };
+  if (sandboxWatcher && !runsApi(config)) {
+    const watcherLog = log.child({ watcher: 'sandbox' });
+    shutdown.unshift(await onSandboxReset(redis, resetChannel, resetSandboxState, watcherLog));
+  }
+
   // ---- API + stream consumer ---------------------------------------------
   if (runsApi(config)) {
     const broadcaster = new Broadcaster();
-    const sandboxWatcher = watchers.find((w) => w.target.network === 'sandbox');
     const simulations = sandbox
       ? new SimulationRunner({
           sandbox,
@@ -233,8 +246,12 @@ async function main(): Promise<void> {
           broadcaster,
           log: log.child({ component: 'simulation' }),
           onReset: () => {
-            sandboxWatcher?.reset();
-            sandboxReader?.invalidate();
+            resetSandboxState();
+            if (!runsWatcher(config)) {
+              announceSandboxReset(redis, resetChannel).catch((err: unknown) =>
+                log.warn({ err }, 'could not tell the watcher about the sandbox reset'),
+              );
+            }
           },
         })
       : null;
