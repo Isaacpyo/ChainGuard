@@ -21,6 +21,11 @@ const ConfigSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().int().positive().default(4000),
+    /**
+     * Reverse-proxy hops in front of the API (Render: 3). The client IP behind the per-IP
+     * rate limits is taken that many hops back along X-Forwarded-For; 0 trusts no proxy.
+     */
+    TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
