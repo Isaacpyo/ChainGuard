@@ -1,6 +1,6 @@
 # ChainGuard
 
-[![CI](https://github.com/isaacpyo/ChainGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/isaacpyo/ChainGuard/actions/workflows/ci.yml)
+[![CI](https://github.com/temitopeagbola/ChainGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/temitopeagbola/ChainGuard/actions/workflows/ci.yml)
 
 **Live demo: https://chainguard.temitopeagbola.com** — click **Try the demo**, then **Simulate attack**.
 (The API runs on Render's free tier; if it has been idle, the first request takes up to a minute while it wakes.)
@@ -72,9 +72,9 @@ flowchart LR
   sim -- "drain burst" --> anvil
 ```
 
-The watcher and the API only communicate through the Redis Stream. They share one process because
-Render's free tier has no background workers (`ROLE=all`). Set `ROLE=api` / `ROLE=watcher` to split
-them.
+The watcher and the API only communicate through Redis. They share one process because Render's free
+tier has no background workers (`ROLE=all`). Set `ROLE=api` / `ROLE=watcher` to split them; the API
+then tells the watcher over Redis pub/sub when it resets the sandbox chain.
 
 ### What happens when you press "Simulate attack"
 
@@ -110,12 +110,12 @@ the race, the rate limit still caps the loss (the UI shows the cap).
 
 `packages/contracts/src/GuardedVault.sol`
 
-| Layer      | Mechanism                                                                                                                                                  | Who                                            |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Rate limit | Token bucket: `withdrawLimit` wei capacity, refilling linearly over `windowDuration`. A leaked withdrawer key can drain at most that rate.                 | enforced on every `withdraw`                   |
-| Pause      | `pause()` is instant and idempotent. `unpause()` is timelocked, so a stolen admin key cannot undo an emergency pause.                                      | `GUARDIAN_ROLE`                                |
-| Timelock   | `schedule(data, salt)` → wait `timelockDelay` → `execute`. Only `grantRole`, `revokeRole`, `setRateLimit`, `setTimelockDelay` and `unpause` can be queued. | `ADMIN_ROLE` schedules; guardians can `cancel` |
-| Roles      | The vault holds `DEFAULT_ADMIN_ROLE` itself and can never hand it out, so role changes _must_ go through the timelock.                                     | —                                              |
+| Layer      | Mechanism                                                                                                                                                                                              | Who                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Rate limit | Token bucket: `withdrawLimit` wei capacity, refilling linearly over `windowDuration`. A leaked withdrawer key can drain at most that rate.                                                             | enforced on every `withdraw`                              |
+| Pause      | `pause()` is instant and idempotent. `unpause()` is timelocked, can only be queued while paused, and only lifts the pause it was queued against, so a stolen admin key cannot undo an emergency pause. | `GUARDIAN_ROLE`                                           |
+| Timelock   | `schedule(data, salt)` → wait `timelockDelay` → `execute`. Only `grantRole`, `revokeRole`, `setRateLimit`, `setTimelockDelay` and `unpause` can be queued.                                             | `ADMIN_ROLE` schedules; guardians and admins can `cancel` |
+| Roles      | The vault holds `DEFAULT_ADMIN_ROLE` itself and can never hand it out, so role changes _must_ go through the timelock.                                                                                 | —                                                         |
 
 ## Detection rules
 
@@ -151,7 +151,7 @@ docker-compose.yml  render.yaml  netlify.toml  .env.example
 ### Everything in Docker (one command)
 
 ```bash
-git clone https://github.com/isaacpyo/ChainGuard.git && cd ChainGuard
+git clone https://github.com/temitopeagbola/ChainGuard.git && cd ChainGuard
 docker compose up --build
 ```
 
@@ -168,18 +168,19 @@ git submodule update --init           # forge-std + OpenZeppelin, only needed fo
 npm install
 docker compose up -d postgres redis   # or point .env at your own
 cp .env.example .env                  # defaults work as-is; the API spawns anvil itself
+                                      # personal overrides go in .env.local (wins over .env)
 npm run dev:api                       # http://localhost:4000
 npm run dev:web                       # http://localhost:3000
 ```
 
 ## Tests
 
-| Command                                       | What it covers                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cd packages/contracts && forge test`         | 41 Foundry tests: unit, fuzz, invariant, drain attack, re-entrancy, deploy script                                                                                                                                                                                                                                          |
-| `npm test`                                    | 91 Vitest tests: rules engine, decoder, watcher pipeline, the Alchemy subscription client (against a fake Alchemy WebSocket server), fees, auth, config, SSE/API clients; integration tests of the HTTP API and stream pipeline against Postgres + Redis; and the **full attack simulation on anvil** (asserts 0 ETH lost) |
-| `npm run test:e2e`                            | Playwright: demo login → live feed → simulate attack → vault paused, 0 ETH lost → acknowledge an alert                                                                                                                                                                                                                     |
-| `npm run lint` / `typecheck` / `format:check` | ESLint, `tsc` (strict) across all packages, Prettier                                                                                                                                                                                                                                                                       |
+| Command                                       | What it covers                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cd packages/contracts && forge test`         | 44 Foundry tests: unit, fuzz, invariant, drain attack, re-entrancy, deploy script                                                                                                                                                                                                                                           |
+| `npm test`                                    | 118 Vitest tests: rules engine, decoder, watcher pipeline, the Alchemy subscription client (against a fake Alchemy WebSocket server), fees, auth, config, SSE/API clients; integration tests of the HTTP API and stream pipeline against Postgres + Redis; and the **full attack simulation on anvil** (asserts 0 ETH lost) |
+| `npm run test:e2e`                            | Playwright: demo login → live feed → simulate attack → vault paused, 0 ETH lost → acknowledge an alert                                                                                                                                                                                                                      |
+| `npm run lint` / `typecheck` / `format:check` | ESLint, `tsc` (strict) across all packages, Prettier                                                                                                                                                                                                                                                                        |
 
 Integration and e2e tests need Postgres and Redis: start them with
 `docker compose up -d postgres redis` and export `TEST_DATABASE_URL` / `TEST_REDIS_URL` (see
@@ -227,6 +228,7 @@ Every variable is documented in [`.env.example`](.env.example). The ones you set
 | `REDIS_URL`                                                 | Render                     | Upstash `rediss://` URL                                                |
 | `JWT_SECRET`                                                | Render                     | Session signing key (generated by the blueprint)                       |
 | `CORS_ORIGINS`                                              | Render                     | Dashboard origin(s), preset to `https://chainguard.temitopeagbola.com` |
+| `TRUST_PROXY`                                               | Render                     | Proxy hops before the API, for per-client rate limits (preset to 3)    |
 | `SANDBOX_ANVIL_SPAWN`, `SANDBOX_RPC_URL`, `SANDBOX_WS_URL`  | Render                     | Run anvil inside the container (preset)                                |
 | `SANDBOX_FORK_URL`                                          | Render (optional)          | Fork Sepolia for the sandbox instead of an empty chain                 |
 | `LIVE_PROVIDER`                                             | Render                     | `off` (default), `mock`, or `alchemy`                                  |
@@ -241,7 +243,7 @@ Every variable is documented in [`.env.example`](.env.example). The ones you set
 | Planned                       | Used                                                                         | Why                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Kafka                         | **Redis Streams** (Upstash)                                                  | There is no free hosted Kafka. Redis Streams provide what this pipeline needs from Kafka: an append-only log, consumer groups, per-message acks, redelivery of unacked messages (`XAUTOCLAIM`) and bounded retention (`MAXLEN`). We lose partitioning and long retention, which a single-vault MVP does not need. The producer and consumer sit behind small interfaces, so moving to Kafka later means replacing two classes. |
-| Separate watcher worker       | Watcher inside the API process (`ROLE=all`)                                  | Render's free tier only offers web services. The halves still talk only through the stream, and `ROLE=api` / `ROLE=watcher` splits them.                                                                                                                                                                                                                                                                                       |
+| Separate watcher worker       | Watcher inside the API process (`ROLE=all`)                                  | Render's free tier only offers web services. The halves still talk only through Redis, and `ROLE=api` / `ROLE=watcher` splits them.                                                                                                                                                                                                                                                                                            |
 | anvil fork as its own service | anvil as a child process of the API on Render (its own container in compose) | Render free web services cannot run sidecars. Fork mode is optional (`SANDBOX_FORK_URL`). Without it the sandbox starts from an empty chain, which keeps the demo fast and needs no RPC key.                                                                                                                                                                                                                                   |
 | Alchemy key required          | Mock provider when keys are absent                                           | `LIVE_PROVIDER=mock` replays scripted, clearly labelled traffic through the real watcher, and tests use an injectable mock source. The Alchemy integration is fully implemented and switches on with `LIVE_PROVIDER=alchemy`.                                                                                                                                                                                                  |
 | Next.js server rendering      | Static export                                                                | The dashboard is client-side and talks to the API directly. Static files on Netlify have no server to cold-start and nothing to keep in sync with the Netlify runtime.                                                                                                                                                                                                                                                         |
@@ -257,6 +259,10 @@ Every variable is documented in [`.env.example`](.env.example). The ones you set
   That is the reason the vault has it.
 - **Front-running is a race**: the guardian outbids the attacker's tip (capped at 1000 gwei). An
   attacker willing to pay more can still win a block. The rate limit is the backstop.
+- **Top-level calls only**: the watcher scores transactions whose `to` is the vault. A withdrawer
+  key used through an EIP-7702-delegated account, or any other contract that calls `withdraw`
+  internally, sends its transaction elsewhere, so the watcher never sees it, pending or mined. The
+  on-chain rate limit still bounds the loss.
 - **Sessions** use a 12 h bearer token in `localStorage`, because the API and dashboard are on
   different sites, where third-party cookies are unreliable. The Netlify CSP restricts script and
   frame sources to reduce XSS exposure.

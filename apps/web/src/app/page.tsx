@@ -72,7 +72,7 @@ export default function Home() {
       <footer className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 text-xs text-muted">
         <span>Solidity · Foundry · viem · Redis Streams · PostgreSQL · Next.js</span>
         <a
-          href="https://github.com/isaacpyo/ChainGuard"
+          href="https://github.com/temitopeagbola/ChainGuard"
           className="underline decoration-line-strong underline-offset-4 hover:text-ink"
         >
           Source on GitHub

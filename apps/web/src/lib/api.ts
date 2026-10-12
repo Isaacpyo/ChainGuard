@@ -59,6 +59,9 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
+  const method = opts.method ?? 'GET';
+  // Only retry idempotent requests; a POST/PATCH may already have run.
+  const retryable = method === 'GET';
   const started = Date.now();
   const wakingTimer = setTimeout(() => setServerStatus('waking'), WAKING_AFTER_MS);
   try {
@@ -66,14 +69,14 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
       let res: Response;
       try {
         res = await fetchImpl(`${API_URL}${path}`, {
-          method: opts.method ?? 'GET',
+          method,
           headers,
           body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
           signal: opts.signal,
         });
       } catch (err) {
         if (opts.signal?.aborted) throw err;
-        if (Date.now() - started > WAKE_BUDGET_MS) {
+        if (!retryable || Date.now() - started > WAKE_BUDGET_MS) {
           setServerStatus('down');
           throw new ApiError(
             0,
@@ -86,18 +89,28 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
         continue;
       }
 
-      if (isColdStart(res.status) && path !== '/health' && Date.now() - started < WAKE_BUDGET_MS) {
-        // Only retry idempotent requests; a POST may already have run.
-        if ((opts.method ?? 'GET') === 'GET') {
-          setServerStatus('waking');
-          await sleep(Math.min(8_000, 1_000 * 2 ** attempt));
-          continue;
-        }
+      if (
+        retryable &&
+        isColdStart(res.status) &&
+        path !== '/health' &&
+        Date.now() - started < WAKE_BUDGET_MS
+      ) {
+        setServerStatus('waking');
+        await sleep(Math.min(8_000, 1_000 * 2 ** attempt));
+        continue;
       }
 
       setServerStatus('ready');
       const text = await res.text();
-      const data: unknown = text ? JSON.parse(text) : null;
+      let data: unknown = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        // Not JSON, e.g. an HTML error page from a proxy in front of the API.
+        if (res.ok) {
+          throw new ApiError(res.status, 'invalid_response', 'Unexpected response from the API.');
+        }
+      }
       if (!res.ok) {
         const body = (data ?? {}) as {
           error?: string;
@@ -108,7 +121,8 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
         throw new ApiError(
           res.status,
           body.error ?? 'error',
-          body.message ?? res.statusText,
+          // HTTP/2 responses carry no reason phrase, so statusText can be empty.
+          body.message ?? (res.statusText || `Request failed (${res.status})`),
           body.details,
         );
       }

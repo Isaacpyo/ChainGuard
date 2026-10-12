@@ -14,7 +14,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///            that front-runs suspicious mempool transactions;
 ///         3. a timelock on every admin change (role grants, limit changes and
 ///            unpausing), so a stolen admin key cannot quietly widen the limits or
-///            undo an emergency pause. Guardians can cancel queued operations.
+///            undo an emergency pause. Guardians and admins can cancel queued operations.
 /// @dev The vault holds DEFAULT_ADMIN_ROLE itself, which makes `execute` the only
 ///      path to `grantRole` / `revokeRole`.
 contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
@@ -41,6 +41,11 @@ contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Timestamp at which a scheduled operation becomes executable (0 = not scheduled).
     mapping(bytes32 id => uint256 readyAt) public operationReadyAt;
+
+    /// @notice Number of times the vault has gone from unpaused to paused.
+    uint256 public pauseCount;
+    /// @dev The pause a queued `unpause` was scheduled against. A stale one can never lift a later pause.
+    mapping(bytes32 id => uint256 pauseNumber) private _unpauseTarget;
 
     struct VaultState {
         uint256 balance;
@@ -73,6 +78,7 @@ contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
     error OperationNotReady(bytes32 id, uint256 readyAt);
     error NotAdminOrGuardian(address account);
     error ProtectedRole();
+    error StaleUnpause(bytes32 id);
 
     /// @dev Restricts a function to calls made by `execute`, i.e. after the timelock delay.
     modifier onlyTimelock() {
@@ -168,10 +174,15 @@ contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Stops withdrawals immediately. Idempotent so racing guardians never revert.
     function pause() external onlyRole(GUARDIAN_ROLE) {
-        if (!paused()) _pause();
+        if (!paused()) {
+            ++pauseCount;
+            _pause();
+        }
     }
 
     /// @notice Resumes withdrawals. Timelocked: a stolen admin key cannot undo a pause instantly.
+    /// @dev Can only be scheduled while paused, and only lifts the pause it was scheduled against,
+    ///      so an `unpause` queued in advance cannot undo a later emergency pause.
     function unpause() external onlyTimelock {
         _unpause();
     }
@@ -192,6 +203,11 @@ contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
         id = hashOperation(data, salt);
         if (operationReadyAt[id] != 0) revert OperationAlreadyScheduled(id);
 
+        if (bytes4(data[:4]) == this.unpause.selector) {
+            if (!paused()) revert ExpectedPause();
+            _unpauseTarget[id] = pauseCount;
+        }
+
         uint256 readyAt = block.timestamp + timelockDelay;
         operationReadyAt[id] = readyAt;
         emit OperationScheduled(id, msg.sender, data, salt, readyAt);
@@ -202,19 +218,25 @@ contract GuardedVault is AccessControl, Pausable, ReentrancyGuard {
         uint256 readyAt = operationReadyAt[id];
         if (readyAt == 0) revert OperationNotScheduled(id);
         if (block.timestamp < readyAt) revert OperationNotReady(id, readyAt);
+        if (bytes4(data[:4]) == this.unpause.selector && _unpauseTarget[id] != pauseCount) {
+            revert StaleUnpause(id);
+        }
 
         delete operationReadyAt[id];
+        delete _unpauseTarget[id];
         Address.functionCall(address(this), data);
         emit OperationExecuted(id, msg.sender);
     }
 
-    /// @notice Drops a queued operation. Guardians can veto a malicious admin during the delay.
+    /// @notice Drops a queued operation. Guardians can veto a malicious admin during the delay;
+    ///         admins can withdraw their own mistakes.
     function cancel(bytes32 id) external {
         if (!hasRole(ADMIN_ROLE, msg.sender) && !hasRole(GUARDIAN_ROLE, msg.sender)) {
             revert NotAdminOrGuardian(msg.sender);
         }
         if (operationReadyAt[id] == 0) revert OperationNotScheduled(id);
         delete operationReadyAt[id];
+        delete _unpauseTarget[id];
         emit OperationCancelled(id, msg.sender);
     }
 

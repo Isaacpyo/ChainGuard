@@ -11,6 +11,7 @@ import type {
   Network,
 } from '@chainguard/shared';
 import { SEVERITIES } from '@chainguard/shared';
+import { z } from 'zod';
 import type { Db } from './pool';
 import type { AlertPayload } from '../streams/events';
 
@@ -176,11 +177,17 @@ export function encodeCursor(detectedAt: string, id: string): string {
   return Buffer.from(`${detectedAt}|${id}`).toString('base64url');
 }
 
+// Strict enough that Postgres' ::timestamptz and ::uuid casts cannot fail on it.
+const Cursor = z.object({
+  detectedAt: z.iso.datetime().refine((s) => !s.startsWith('0000'), 'Postgres has no year 0'),
+  id: z.uuid(),
+});
+
 export function decodeCursor(cursor: string): { detectedAt: string; id: string } | null {
-  const [detectedAt, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
-  if (!detectedAt || !id || Number.isNaN(Date.parse(detectedAt))) return null;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  return { detectedAt, id };
+  const parts = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  if (parts.length !== 2) return null;
+  const parsed = Cursor.safeParse({ detectedAt: parts[0], id: parts[1] });
+  return parsed.success ? parsed.data : null;
 }
 
 export interface AlertQuery {

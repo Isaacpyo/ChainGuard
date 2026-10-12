@@ -30,6 +30,10 @@ services:
         sync: false # Upstash rediss:// URL
       - key: CORS_ORIGINS
         value: https://chainguard.temitopeagbola.com
+      # Requests arrive through Cloudflare and two Render proxies, each appending to
+      # X-Forwarded-For: trust those 3 hops so rate limits key on the real client IP.
+      - key: TRUST_PROXY
+        value: '3'
       # The sandbox chain runs as a child process inside this one container.
       - key: SANDBOX_ANVIL_SPAWN
         value: 'true'

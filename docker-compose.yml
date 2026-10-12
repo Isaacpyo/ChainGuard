@@ -4,6 +4,7 @@
 #   anvil      http://localhost:8545 (sandbox chain behind "Simulate attack")
 name: chainguard
 
+# Data services (Postgres, Redis, anvil) listen on 127.0.0.1 only: they use default credentials.
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,7 +12,7 @@ services:
       POSTGRES_USER: chainguard
       POSTGRES_PASSWORD: chainguard
       POSTGRES_DB: chainguard
-    ports: ['5432:5432']
+    ports: ['127.0.0.1:5432:5432']
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U chainguard']
@@ -22,7 +23,7 @@ services:
   redis:
     image: redis:7-alpine
     command: ['redis-server', '--appendonly', 'yes']
-    ports: ['6379:6379']
+    ports: ['127.0.0.1:6379:6379']
     volumes: [redisdata:/data]
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -41,7 +42,7 @@ services:
         $${SANDBOX_FORK_URL:+--fork-url $$SANDBOX_FORK_URL}
     environment:
       SANDBOX_FORK_URL: ${SANDBOX_FORK_URL:-}
-    ports: ['8545:8545']
+    ports: ['127.0.0.1:8545:8545']
     healthcheck:
       test: ['CMD', 'cast', 'chain-id', '--rpc-url', 'http://127.0.0.1:8545']
       interval: 3s
@@ -57,7 +58,8 @@ services:
       NODE_ENV: production
       PORT: 4000
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      JWT_SECRET: ${JWT_SECRET:-compose-local-secret-not-for-production-use}
+      # Not read from .env: the dev-only value there is rejected when NODE_ENV=production.
+      JWT_SECRET: compose-local-secret-not-for-production-use
       DATABASE_URL: postgres://chainguard:chainguard@postgres:5432/chainguard
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: http://localhost:3000
@@ -84,7 +86,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: http://localhost:4000
       secrets: [extra_ca]
-    ports: ['3000:80']
+    ports: ['3000:8080']
     depends_on: [api]
 
 volumes:
@@ -92,6 +94,8 @@ volumes:
   redisdata:
 
 # Only needed behind a TLS-intercepting proxy: EXTRA_CA_CERT=/path/to/ca.pem docker compose build
+# The default is an empty file inside the repo: buildx bake refuses to read paths
+# outside the project (such as /dev/null) without an explicit --allow=fs.read.
 secrets:
   extra_ca:
-    file: ${EXTRA_CA_CERT:-/dev/null}
+    file: ${EXTRA_CA_CERT:-./docker/no-extra-ca.pem}

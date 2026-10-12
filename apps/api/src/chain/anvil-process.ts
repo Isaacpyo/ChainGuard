@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { Logger } from '../logger';
+import { redactUrls, type Logger } from '../logger';
 
 export interface AnvilOptions {
   binary: string;
@@ -47,7 +47,8 @@ export class AnvilProcess {
     const child = spawn(this.opts.binary, this.args(), { stdio: ['ignore', 'ignore', 'pipe'] });
     this.#child = child;
     child.stderr?.on('data', (chunk: Buffer) =>
-      this.log.warn({ anvil: chunk.toString().trim() }, 'anvil'),
+      // A fork's errors can quote SANDBOX_FORK_URL, API key included.
+      this.log.warn({ anvil: redactUrls(chunk.toString().trim()) }, 'anvil'),
     );
     child.on('error', (err) => this.log.error({ err }, 'failed to start anvil'));
     child.on('exit', (code, signal) => {

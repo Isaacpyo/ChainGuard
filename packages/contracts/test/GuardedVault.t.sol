@@ -225,6 +225,42 @@ contract GuardedVaultTest is VaultFixture {
         assertFalse(vault.paused());
     }
 
+    function test_unpause_cannotBeScheduledWhileUnpaused() public {
+        vm.expectRevert(Pausable.ExpectedPause.selector);
+        vm.prank(admin);
+        vault.schedule(abi.encodeCall(GuardedVault.unpause, ()), bytes32(0));
+    }
+
+    /// @dev A stolen admin key queues spare unpauses during one pause, waits for it to be lifted,
+    ///      then tries to use a leftover to instantly undo the next emergency pause.
+    function test_unpause_leftoverCannotLiftALaterPause() public {
+        bytes memory data = abi.encodeCall(GuardedVault.unpause, ());
+        vm.prank(guardian);
+        vault.pause();
+        assertEq(vault.pauseCount(), 1);
+
+        vm.startPrank(admin);
+        vault.schedule(data, bytes32(uint256(1)));
+        bytes32 leftover = vault.schedule(data, bytes32(uint256(2)));
+        vm.warp(block.timestamp + DELAY);
+        vault.execute(data, bytes32(uint256(1)));
+        vm.stopPrank();
+        assertFalse(vault.paused());
+
+        vm.prank(guardian);
+        vault.pause();
+        assertEq(vault.pauseCount(), 2);
+
+        vm.expectRevert(abi.encodeWithSelector(GuardedVault.StaleUnpause.selector, leftover));
+        vm.prank(admin);
+        vault.execute(data, bytes32(uint256(2)));
+        assertTrue(vault.paused());
+
+        // An unpause scheduled against the current pause still works.
+        _timelocked(data);
+        assertFalse(vault.paused());
+    }
+
     // ------------------------------------------------------------------
     // Timelock
     // ------------------------------------------------------------------

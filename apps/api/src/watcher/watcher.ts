@@ -2,7 +2,7 @@ import type { Network } from '@chainguard/shared';
 import { randomUUID } from 'node:crypto';
 import { isAddressEqual, type Address, type Hex } from 'viem';
 import type { VaultStateReader, VaultChainState } from '../chain/vault';
-import type { Logger } from '../logger';
+import { redactUrls, type Logger } from '../logger';
 import type { AlertPayload, ChainGuardEvent, ResponseEvent } from '../streams/events';
 import { decodeVaultCall } from './decoder';
 import type { Guardian } from './guardian';
@@ -33,8 +33,10 @@ export interface WatcherDeps {
   now?: () => number;
 }
 
+type ReceiptOutcome = { status: 'success' | 'reverted' } | { error: string };
+
 type PauseOutcome =
-  | { kind: 'submitted'; hash: Hex }
+  | { kind: 'submitted'; hash: Hex; receipt: Promise<ReceiptOutcome> }
   | { kind: 'already_paused'; hash: Hex | null }
   | { kind: 'failed'; error: string };
 
@@ -158,7 +160,11 @@ export class Watcher {
     }
   }
 
-  /** Synchronously claims the in-flight slot so concurrent alerts send one pause(). */
+  /**
+   * Synchronously claims the in-flight slot so concurrent alerts send one pause(). The slot
+   * is released once the pause is mined or could not be sent, whether or not publishing the
+   * alert and its responses works.
+   */
   #submitPause(tx: PendingTx, vault: VaultChainState | null): Promise<PauseOutcome> {
     if (vault?.paused) return Promise.resolve({ kind: 'already_paused', hash: null });
     if (this.#pauseInFlight) {
@@ -167,18 +173,43 @@ export class Watcher {
     const guardian = this.#d.guardian!;
     const slot: { hash: Hex | null } = { hash: null };
     this.#pauseInFlight = slot;
+    // After a reset() the slot may already belong to a newer pause.
+    const release = () => {
+      if (this.#pauseInFlight === slot) this.#pauseInFlight = null;
+    };
 
     return guardian
       .pause(this.#d.target.vaultAddress, tx)
       .then((hash): PauseOutcome => {
         slot.hash = hash;
         this.#d.log.warn({ hash, trigger: tx.hash }, 'guardian pause submitted');
-        return { kind: 'submitted', hash };
+        const receipt = guardian
+          .waitForReceipt(hash)
+          .then(
+            (status): ReceiptOutcome => {
+              this.#d.state.invalidate?.();
+              return { status };
+            },
+            (err: unknown): ReceiptOutcome => ({ error: errorText(err) }),
+          )
+          .finally(release);
+        this.#track(receipt);
+        return { kind: 'submitted', hash, receipt };
       })
       .catch((err: unknown): PauseOutcome => {
-        this.#pauseInFlight = null;
-        return { kind: 'failed', error: err instanceof Error ? err.message : String(err) };
+        release();
+        const error = errorText(err);
+        this.#d.log.error({ error }, 'guardian pause failed');
+        return { kind: 'failed', error };
       });
+  }
+
+  /** Keeps idle() and stop() waiting for a pause to be mined even if its alert failed. */
+  #track(p: Promise<unknown>): void {
+    const tracked: Promise<void> = p
+      .then(() => undefined)
+      .finally(() => this.#pending.delete(tracked));
+    this.#pending.add(tracked);
   }
 
   async #reportPause(alertId: string, pending: Promise<PauseOutcome>): Promise<void> {
@@ -202,20 +233,19 @@ export class Watcher {
       return;
     }
     if (outcome.kind === 'failed') {
-      this.#d.log.error({ error: outcome.error }, 'guardian pause failed');
       await emit('pause_failed', null, outcome.error);
       return;
     }
 
     await emit('pause_submitted', outcome.hash);
-    try {
-      const status = await this.#d.guardian!.waitForReceipt(outcome.hash);
-      this.#d.state.invalidate?.();
-      await emit(status === 'success' ? 'pause_confirmed' : 'pause_failed', outcome.hash);
-    } catch (err) {
-      await emit('pause_failed', outcome.hash, err instanceof Error ? err.message : String(err));
-    } finally {
-      this.#pauseInFlight = null;
+    const receipt = await outcome.receipt;
+    if ('error' in receipt) {
+      await emit('pause_failed', outcome.hash, receipt.error);
+    } else {
+      await emit(receipt.status === 'success' ? 'pause_confirmed' : 'pause_failed', outcome.hash);
     }
   }
 }
+
+/** Error text for logs and the stream: viem messages include the RPC URL, API key and all. */
+const errorText = (err: unknown) => redactUrls(err instanceof Error ? err.message : String(err));

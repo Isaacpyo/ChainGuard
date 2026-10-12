@@ -91,8 +91,11 @@ export class StreamConsumer {
   }
 
   async #run(): Promise<void> {
-    // Our own un-acked messages from a previous run first, then reclaimed ones.
-    await this.#drain('0');
+    // Our own un-acked messages from a previous run first, then reclaimed ones. If that
+    // fails they stay pending and XAUTOCLAIM below picks them up once they are idle.
+    await this.#drain('0').catch((err: unknown) => {
+      this.log.error({ err }, 'could not replay pending stream messages; will reclaim them');
+    });
     let lastClaim = 0;
     while (this.#running) {
       try {

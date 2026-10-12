@@ -220,6 +220,19 @@ describeInfra('HTTP API', () => {
         headers: authed(token),
       });
       expect(bad.statusCode).toBe(400);
+
+      // Well-formed enough to reach Postgres before, where the casts failed with a 500.
+      for (const forged of [
+        `2026-01-01T00:00:00Z|${'-'.repeat(36)}`,
+        `2020|${first.items[0]!.id}`,
+      ]) {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/alerts?cursor=${Buffer.from(forged).toString('base64url')}`,
+          headers: authed(token),
+        });
+        expect(res.statusCode, forged).toBe(400);
+      }
     });
 
     it('filters by severity', async () => {

@@ -38,9 +38,12 @@ const withTimeout = (p: Promise<boolean>, ms = 2_000) =>
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config } = deps;
+  const hops = config.TRUST_PROXY;
   const app = Fastify({
     loggerInstance: deps.log as FastifyBaseLogger,
-    trustProxy: true, // Render terminates TLS in front of us
+    // Trust only the proxies we sit behind: X-Forwarded-For entries further left are written
+    // by the client. (Fastify ignores a bare hop count, hence the function.)
+    trustProxy: hops > 0 ? (_address: string, hop: number) => hop < hops : false,
     bodyLimit: 64 * 1024,
     forceCloseConnections: true, // SSE connections must not block shutdown
   });
@@ -78,7 +81,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/', async () => ({
     name: 'chainguard-api',
-    docs: 'https://github.com/isaacpyo/ChainGuard',
+    docs: 'https://github.com/temitopeagbola/ChainGuard',
   }));
 
   app.get('/health', async (_req, reply) => {
