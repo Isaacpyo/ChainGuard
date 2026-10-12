@@ -258,6 +258,10 @@ Every variable is documented in [`.env.example`](.env.example). The ones you set
   That is the reason the vault has it.
 - **Front-running is a race**: the guardian outbids the attacker's tip (capped at 1000 gwei). An
   attacker willing to pay more can still win a block. The rate limit is the backstop.
+- **Top-level calls only**: the watcher scores transactions whose `to` is the vault. A withdrawer
+  key used through an EIP-7702-delegated account, or any other contract that calls `withdraw`
+  internally, sends its transaction elsewhere, so the watcher never sees it, pending or mined. The
+  on-chain rate limit still bounds the loss.
 - **Sessions** use a 12 h bearer token in `localStorage`, because the API and dashboard are on
   different sites, where third-party cookies are unreliable. The Netlify CSP restricts script and
   frame sources to reduce XSS exposure.
