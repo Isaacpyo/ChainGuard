@@ -1,0 +1,101 @@
+# The whole system locally: docker compose up --build
+#   dashboard  http://localhost:3000
+#   API        http://localhost:4000
+#   anvil      http://localhost:8545 (sandbox chain behind "Simulate attack")
+name: chainguard
+
+# Data services (Postgres, Redis, anvil) listen on 127.0.0.1 only: they use default credentials.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chainguard
+      POSTGRES_PASSWORD: chainguard
+      POSTGRES_DB: chainguard
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U chainguard']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports: ['127.0.0.1:6379:6379']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.5.1
+    entrypoint: ['/bin/sh', '-c']
+    # Interval mining + fee ordering give the guardian a real mempool race to win.
+    # Set SANDBOX_FORK_URL (e.g. a Sepolia RPC) to fork instead of starting empty.
+    command:
+      - >-
+        anvil --host 0.0.0.0 --port 8545 --block-time 2 --order fees --chain-id 31337
+        $${SANDBOX_FORK_URL:+--fork-url $$SANDBOX_FORK_URL}
+    environment:
+      SANDBOX_FORK_URL: ${SANDBOX_FORK_URL:-}
+    ports: ['127.0.0.1:8545:8545']
+    healthcheck:
+      test: ['CMD', 'cast', 'chain-id', '--rpc-url', 'http://127.0.0.1:8545']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      secrets: [extra_ca]
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Not read from .env: the dev-only value there is rejected when NODE_ENV=production.
+      JWT_SECRET: compose-local-secret-not-for-production-use
+      DATABASE_URL: postgres://chainguard:chainguard@postgres:5432/chainguard
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: http://localhost:3000
+      SANDBOX_RPC_URL: http://anvil:8545
+      SANDBOX_WS_URL: ws://anvil:8545
+      SANDBOX_ANVIL_SPAWN: 'false'
+      SANDBOX_FORK_URL: ${SANDBOX_FORK_URL:-}
+      LIVE_PROVIDER: ${LIVE_PROVIDER:-off}
+      ALCHEMY_WS_URL: ${ALCHEMY_WS_URL:-}
+      SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL:-}
+      LIVE_VAULT_ADDRESS: ${LIVE_VAULT_ADDRESS:-}
+      LIVE_KNOWN_CALLERS: ${LIVE_KNOWN_CALLERS:-}
+      GUARDIAN_PRIVATE_KEY: ${GUARDIAN_PRIVATE_KEY:-}
+    ports: ['4000:4000']
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      anvil: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+      secrets: [extra_ca]
+    ports: ['3000:8080']
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  redisdata:
+
+# Only needed behind a TLS-intercepting proxy: EXTRA_CA_CERT=/path/to/ca.pem docker compose build
+# The default is an empty file inside the repo: buildx bake refuses to read paths
+# outside the project (such as /dev/null) without an explicit --allow=fs.read.
+secrets:
+  extra_ca:
+    file: ${EXTRA_CA_CERT:-./docker/no-extra-ca.pem}

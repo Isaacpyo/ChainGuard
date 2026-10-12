@@ -1,0 +1,61 @@
+# Render Blueprint for the ChainGuard API (apps/api).
+# New → Blueprint → pick this repo. Render prompts for every `sync: false` value.
+# Postgres lives on Neon and Redis on Upstash (both free); see README → Deploy.
+services:
+  - type: web
+    name: chainguard-api
+    runtime: docker
+    plan: free
+    # Keep this close to your Neon and Upstash regions.
+    region: frankfurt
+    branch: main
+    dockerContext: .
+    dockerfilePath: ./apps/api/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - apps/api/**
+        - packages/shared/**
+        - package-lock.json
+        - render.yaml
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false # Neon pooled connection string, with ?sslmode=require
+      - key: REDIS_URL
+        sync: false # Upstash rediss:// URL
+      - key: CORS_ORIGINS
+        value: https://chainguard.temitopeagbola.com
+      # Requests arrive through Cloudflare and two Render proxies, each appending to
+      # X-Forwarded-For: trust those 3 hops so rate limits key on the real client IP.
+      - key: TRUST_PROXY
+        value: '3'
+      # The sandbox chain runs as a child process inside this one container.
+      - key: SANDBOX_ANVIL_SPAWN
+        value: 'true'
+      - key: SANDBOX_RPC_URL
+        value: http://127.0.0.1:8545
+      - key: SANDBOX_WS_URL
+        value: ws://127.0.0.1:8545
+      - key: SANDBOX_FORK_URL
+        sync: false # optional: Sepolia RPC URL to make the sandbox a fork
+      # Long blocking reads keep Upstash's free command budget in check.
+      - key: STREAM_BLOCK_MS
+        value: '20000'
+      # Live Sepolia monitoring: off | mock | alchemy
+      - key: LIVE_PROVIDER
+        value: 'off'
+      - key: ALCHEMY_WS_URL
+        sync: false
+      - key: SEPOLIA_RPC_URL
+        sync: false
+      - key: LIVE_VAULT_ADDRESS
+        sync: false
+      - key: LIVE_KNOWN_CALLERS
+        sync: false
+      - key: GUARDIAN_PRIVATE_KEY
+        sync: false # secret: Sepolia guardian key, never commit
